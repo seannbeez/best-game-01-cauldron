@@ -5,7 +5,7 @@
 import { BOARD, BOTTOM, COLORS, HOTBAR, SIDE, TOP, VIEW } from './config.js';
 import { drawEnemy, drawPortrait } from './enemies.js';
 import { drawRelicIcon } from './relics.js';
-import { drawCallouts, drawCauldrons, drawDecals, drawFlashes, drawFloaters, drawParticles, drawWalls, drawWeb, drawZones } from './zones.js';
+import { drawBadges, drawCallouts, drawCauldrons, drawDecals, drawFlashes, drawFloaters, drawParticles, drawWalls, drawWeb, drawZones } from './zones.js';
 import { drawPuck } from './puck.js';
 
 let parchmentCache = null;
@@ -370,6 +370,9 @@ function drawBoard(ctx, S) {
   drawFlashes(ctx, S.flashes);
   drawFloaters(ctx, S.floaters);
   drawCallouts(ctx, S.callouts);
+  // Pill badges LAST among board-layer elements: after enemies, pucks,
+  // particles, flashes, floaters and callouts, so no sprite ever clips a badge.
+  drawBadges(ctx, S);
   // Banner instruction bar: a real in-game UI strip along the bottom of the board.
   if (S.screen === 'play') {
     const bw = 720;
@@ -742,12 +745,25 @@ function dimBoard(ctx) {
   ctx.fillRect(0, 0, VIEW.w, VIEW.h);
 }
 
+// Modal geometry: every modal overlay is centered on the BOARD region only
+// (never the viewport) and its width is capped so both edges stay inside the
+// board with a 24px margin — its right edge never reaches the sidebar's left
+// edge (SIDE.x). Returns { cx, x, w } for a requested width; widths that
+// already fit are kept unchanged.
+function modalBox(w) {
+  const cx = BOARD.x + BOARD.w / 2;
+  const maxW = BOARD.w - 2 * 24;
+  const mw = Math.min(w, maxW);
+  return { cx, x: cx - mw / 2, w: mw };
+}
+
 function drawTitle(ctx, S) {
   dimBoard(ctx);
-  // Centered on the VIEWPORT (not the board) with a guaranteed side margin,
-  // and every title line is fit-measured so nothing can ever clip an edge.
-  const cx = VIEW.w / 2;
-  const card = { x: cx - 420, y: 88, w: 840, h: 524 };
+  // Centered on the BOARD region (never the viewport) with a guaranteed side
+  // margin, and every title line is fit-measured so nothing can ever clip an
+  // edge or overlap the sidebar.
+  const { cx, x: cardX, w: cardW } = modalBox(840);
+  const card = { x: cardX, y: 88, w: cardW, h: 524 };
   ctx.fillStyle = COLORS.parchment;
   wobblyRect(ctx, card.x, card.y, card.w, card.h, 8, 9.1);
   ctx.fill();
@@ -889,11 +905,12 @@ function drawComicPanel(ctx, i, cx, cy) {
 
 function drawDraft(ctx, S) {
   dimBoard(ctx);
-  // Centered on the VIEWPORT with fit-measured titles: nothing clips an edge.
-  const cx = VIEW.w / 2;
+  // Centered on the BOARD region with fit-measured titles: nothing clips an
+  // edge or overlaps the sidebar. All 3 cards + Reroll fit inside the board.
+  const cx = BOARD.x + BOARD.w / 2;
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fdf6e3';
-  ctx.font = fitFont(ctx, 'CHOOSE A RELIC — PICK 1 OF 3', VIEW.w - 96, 30, true);
+  ctx.font = fitFont(ctx, 'CHOOSE A RELIC — PICK 1 OF 3', BOARD.w - 48, 30, true);
   ctx.fillText('CHOOSE A RELIC — PICK 1 OF 3', cx, 128);
   ctx.fillStyle = '#f2c94c';
   ctx.font = font(15, false);
@@ -995,8 +1012,8 @@ function wrapText(ctx, text, cx, y, maxW, lh) {
 
 function drawVictory(ctx, S) {
   dimBoard(ctx);
-  const cx = VIEW.w / 2;
-  const card = { x: cx - 360, y: 96, w: 720, h: 520 };
+  const { cx, x: cardX, w: cardW } = modalBox(720);
+  const card = { x: cardX, y: 96, w: cardW, h: 520 };
   ctx.fillStyle = COLORS.parchment;
   wobblyRect(ctx, card.x, card.y, card.w, card.h, 8, 6.6);
   ctx.fill();
@@ -1057,8 +1074,8 @@ function drawVictory(ctx, S) {
 
 function drawDefeat(ctx, S) {
   dimBoard(ctx);
-  const cx = VIEW.w / 2;
-  const card = { x: cx - 330, y: 150, w: 660, h: 380 };
+  const { cx, x: cardX, w: cardW } = modalBox(660);
+  const card = { x: cardX, y: 150, w: cardW, h: 380 };
   ctx.fillStyle = COLORS.parchment;
   wobblyRect(ctx, card.x, card.y, card.w, card.h, 8, 3.3);
   ctx.fill();

@@ -130,19 +130,44 @@ export function drawZones(ctx, S) {
     ctx.stroke();
     ctx.restore();
     for (const v of verts) rivet(ctx, v.x, v.y);
-    // Zone label as a pill badge above the polygon, pushed clear of the boss.
-    const lp = badgeSpot(cx, cy - z.r - 16, S.boss ? { x: S.boss.x, y: S.boss.y, r: S.boss.r + 52 } : null);
+  }
+}
+
+// Pill badges, drawn LAST among board-layer elements — after enemies, pucks,
+// particles, flashes, floaters and callouts — so no sprite or effect can ever
+// overlap or clip a badge's text. Positions are identical to before; only the
+// draw order changed. Called from render.js drawBoard, never from drawZones
+// or drawWeb.
+export function drawBadges(ctx, S) {
+  const avoid = S.boss ? { x: S.boss.x, y: S.boss.y, r: S.boss.r + 52 } : null;
+  // Zone labels above each polygon (e.g. '3X BOUNCE!' on the amber zone).
+  for (let zi = 0; zi < ZONES.length; zi++) {
+    const z = ZONES[zi];
+    const cx = BOARD.x + z.cx * BOARD.w;
+    const cy = BOARD.y + z.cy * BOARD.h;
+    const lp = badgeSpot(cx, cy - z.r - 16, avoid);
     pillBadge(ctx, lp.x, lp.y, z.label, z.id === 'cyan' ? '#8fc4ff' : '#f2c94c');
   }
+  // Web badges pinned onto the lines and edges.
+  // TRI-TRAP READY! sits on the amber zone's quiet left edge, where live
+  // hit callouts almost never land, so the two texts cannot print over each other.
+  const pts = ZONES.map((z) => ({ x: BOARD.x + z.cx * BOARD.w, y: BOARD.y + z.cy * BOARD.h }));
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const eAB = badgeSpot(pts[0].x - 118, pts[0].y, avoid);
+  pillBadge(ctx, eAB.x, eAB.y, 'TRI-TRAP READY!', '#f2c94c');
+  const eBC = badgeSpot(mid(pts[1], pts[2]).x, mid(pts[1], pts[2]).y, avoid);
+  pillBadge(ctx, eBC.x, eBC.y, '3X RICOCHET', '#f2c94c');
+  const webMid = badgeSpot((pts[1].x + S.cauldrons[1].x) / 2, (pts[1].y + S.cauldrons[1].y) / 2, avoid);
+  pillBadge(ctx, webMid.x, webMid.y, '95% TAUT', '#8fc4ff');
 }
 
 // Luminous tether fields: a saturated amber triangle joining the three combo
 // zones, thick glowing cobalt tension beams from each zone to its two nearest
-// cauldrons, anchor rivets at every vertex, and high-contrast pill badges
-// pinned onto the lines. Drawn under the pieces, above the parchment.
+// cauldrons, anchor rivets at every vertex. The pill badges pinned onto the
+// lines are drawn separately by drawBadges, after all pieces, so no enemy
+// can ever overlap a badge. Drawn under the pieces, above the parchment.
 export function drawWeb(ctx, S) {
   const pts = ZONES.map((z) => ({ x: BOARD.x + z.cx * BOARD.w, y: BOARD.y + z.cy * BOARD.h }));
-  const avoid = S.boss ? { x: S.boss.x, y: S.boss.y, r: S.boss.r + 52 } : null;
   ctx.save();
   // Amber triangle field: rich saturated fill, thick glowing border, rivets.
   ctx.fillStyle = 'rgba(255,165,0,0.32)';
@@ -188,16 +213,6 @@ export function drawWeb(ctx, S) {
       rivet(ctx, mx, my);
     }
   }
-  // Pill badges pinned onto the lines and edges, pushed clear of the boss.
-  // TRI-TRAP READY! sits on the amber zone's quiet left edge, where live
-  // hit callouts almost never land, so the two texts cannot print over each other.
-  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  const eAB = badgeSpot(pts[0].x - 118, pts[0].y, avoid);
-  pillBadge(ctx, eAB.x, eAB.y, 'TRI-TRAP READY!', '#f2c94c');
-  const eBC = badgeSpot(mid(pts[1], pts[2]).x, mid(pts[1], pts[2]).y, avoid);
-  pillBadge(ctx, eBC.x, eBC.y, '3X RICOCHET', '#f2c94c');
-  const webMid = badgeSpot((pts[1].x + S.cauldrons[1].x) / 2, (pts[1].y + S.cauldrons[1].y) / 2, avoid);
-  pillBadge(ctx, webMid.x, webMid.y, '95% TAUT', '#8fc4ff');
 }
 
 export function drawWalls(ctx, walls) {

@@ -5,7 +5,7 @@
 import { BOARD, BOTTOM, COLORS, HOTBAR, SIDE, TOP, VIEW } from './config.js';
 import { drawEnemy, drawPortrait } from './enemies.js';
 import { drawRelicIcon } from './relics.js';
-import { drawCallouts, drawCauldrons, drawDecals, drawFloaters, drawParticles, drawWalls, drawWeb, drawZones } from './zones.js';
+import { drawCallouts, drawCauldrons, drawDecals, drawFlashes, drawFloaters, drawParticles, drawWalls, drawWeb, drawZones } from './zones.js';
 import { drawPuck } from './puck.js';
 
 let parchmentCache = null;
@@ -353,7 +353,7 @@ function drawBoard(ctx, S) {
     }
   }
   drawDecals(ctx, S.decals);
-  drawZones(ctx, S.time);
+  drawZones(ctx, S);
   drawWeb(ctx, S);
   drawWalls(ctx, S.walls);
   drawCauldrons(ctx, S.cauldrons, S.time);
@@ -367,8 +367,29 @@ function drawBoard(ctx, S) {
   for (const p of S.extraPucks) drawPuck(ctx, p, S.time);
   if (S.puck) drawPuck(ctx, S.puck, S.time);
   drawParticles(ctx, S.particles);
+  drawFlashes(ctx, S.flashes);
   drawFloaters(ctx, S.floaters);
   drawCallouts(ctx, S.callouts);
+  // Banner instruction bar: a real in-game UI strip along the bottom of the board.
+  if (S.screen === 'play') {
+    const bw = 720;
+    const bh = 28;
+    const bx = BOARD.x + (BOARD.w - bw) / 2;
+    const by = BOARD.y + BOARD.h - 38;
+    ctx.save();
+    ctx.fillStyle = 'rgba(29,43,74,0.92)';
+    wobblyRect(ctx, bx, by, bw, bh, 6, 2.9);
+    ctx.fill();
+    ctx.strokeStyle = '#f2c94c';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#f2c94c';
+    ctx.font = fitFont(ctx, 'SLING through glowing triangles to supercharge & bounce enemies into cauldrons!', bw - 28, 14, true);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SLING through glowing triangles to supercharge & bounce enemies into cauldrons!', bx + bw / 2, by + bh / 2 + 1);
+    ctx.restore();
+  }
   // Sling aim arrow.
   if (S.aim && S.aim.active && S.puck && S.puck.resting) {
     const dx = S.aim.cx - S.aim.sx;

@@ -76,15 +76,19 @@ export function updatePuck(p, dt, state, onBounce) {
 }
 
 export function drawPuck(ctx, p, time) {
-  // Ink trail.
+  // Glowing fire-streak motion trail: additive orange-gold ghosts of the puck.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < p.trail.length; i++) {
     const t = p.trail[i];
-    const a = (i / p.trail.length) * 0.30;
-    ctx.fillStyle = p.overboil > 0 ? `rgba(192,57,43,${a})` : `rgba(43,38,32,${a})`;
+    const f = (i + 1) / p.trail.length;
+    const a = f * 0.45;
+    ctx.fillStyle = p.overboil > 0 ? `rgba(255,80,30,${a})` : p.frost ? `rgba(140,220,255,${a})` : `rgba(255,165,0,${a})`;
     ctx.beginPath();
-    ctx.arc(t.x, t.y, p.r * (0.35 + 0.5 * (i / p.trail.length)), 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, p.r * (0.35 + 0.5 * f), 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
   ctx.save();
   ctx.translate(p.x, p.y);
   // Soft shadow.
@@ -92,7 +96,9 @@ export function drawPuck(ctx, p, time) {
   ctx.beginPath();
   ctx.ellipse(0, p.r * 0.8, p.r * 0.9, p.r * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Body: glossy ink puck with a gold rim and a spinning rune.
+  // Body: glossy ink puck with a gold rim, a spinning rune, and a glowing aura.
+  ctx.shadowColor = p.overboil > 0 ? '#ff5a1a' : p.frost ? '#5ec8ff' : '#f2c94c';
+  ctx.shadowBlur = 16;
   const grad = ctx.createRadialGradient(-p.r * 0.3, -p.r * 0.35, p.r * 0.15, 0, 0, p.r);
   grad.addColorStop(0, p.frost ? '#bfe3ea' : '#4a4458');
   grad.addColorStop(0.7, p.frost ? '#7fb8c9' : '#2b2620');
@@ -101,6 +107,7 @@ export function drawPuck(ctx, p, time) {
   ctx.beginPath();
   ctx.arc(0, 0, p.r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.strokeStyle = p.frost ? '#dcebf2' : '#d4a017';
   ctx.lineWidth = 2.5;
   ctx.stroke();

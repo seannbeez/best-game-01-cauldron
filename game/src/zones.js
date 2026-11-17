@@ -34,81 +34,170 @@ function wallArc(cx, cy, r, a0, a1) {
   return pts;
 }
 
-export function drawZones(ctx, time) {
-  for (const z of ZONES) {
+const INK = '#2b2620';
+
+// A crisp high-contrast pill badge pinned onto a line or zone: dark navy chip,
+// gold rim, bold white/gold text. Returns its width.
+function pillBadge(ctx, x, y, text, fg) {
+  ctx.font = 'bold 12px Georgia, serif';
+  const w = ctx.measureText(text).width + 22;
+  const h = 22;
+  const bx = x - w / 2;
+  const by = y - h / 2;
+  ctx.save();
+  ctx.fillStyle = '#1e293b';
+  ctx.beginPath();
+  ctx.moveTo(bx + 11, by);
+  ctx.lineTo(bx + w - 11, by);
+  ctx.arc(bx + w - 11, by + 11, 11, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(bx + 11, by + h);
+  ctx.arc(bx + 11, by + 11, 11, Math.PI / 2, Math.PI * 1.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#f2c94c';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = fg || '#f2c94c';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y + 1);
+  ctx.restore();
+  return w;
+}
+
+// Push a point out of the boss keep-out circle, then clamp it inside the board.
+function badgeSpot(x, y, avoid) {
+  let px = x;
+  let py = y;
+  if (avoid) {
+    const dx = px - avoid.x;
+    const dy = py - avoid.y;
+    const d = Math.hypot(dx, dy);
+    const rr = avoid.r + 46;
+    if (d < rr) {
+      const ang = d < 1 ? -Math.PI / 2 : Math.atan2(dy, dx);
+      px = avoid.x + Math.cos(ang) * rr;
+      py = avoid.y + Math.sin(ang) * rr;
+    }
+  }
+  px = Math.max(BOARD.x + 72, Math.min(BOARD.x + BOARD.w - 72, px));
+  py = Math.max(BOARD.y + 30, Math.min(BOARD.y + BOARD.h - 26, py));
+  return { x: px, y: py };
+}
+
+function rivet(ctx, x, y) {
+  ctx.save();
+  ctx.fillStyle = '#d4a017';
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#fdf6e3';
+  ctx.beginPath();
+  ctx.arc(x - 1.5, y - 1.5, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+export function drawZones(ctx, S) {
+  for (let zi = 0; zi < ZONES.length; zi++) {
+    const z = ZONES[zi];
     const cx = BOARD.x + z.cx * BOARD.w;
     const cy = BOARD.y + z.cy * BOARD.h;
-    ctx.fillStyle = z.color;
+    // Vivid angular polygon field (hexagon, seeded rotation) instead of the
+    // old pale dashed circle: saturated translucent fill + thick glowing border.
+    const fill = z.id === 'amber' ? 'rgba(255,165,0,0.32)' : z.id === 'cyan' ? 'rgba(40,140,255,0.28)' : 'rgba(220,60,40,0.30)';
+    const edge = z.id === 'amber' ? '#ff9d00' : z.id === 'cyan' ? '#2f8cff' : '#e04028';
+    const rot = zi * 0.5;
+    const verts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = rot + (i / 6) * Math.PI * 2;
+      verts.push({ x: cx + Math.cos(a) * z.r, y: cy + Math.sin(a) * z.r * 0.92 });
+    }
+    ctx.save();
+    ctx.fillStyle = fill;
     ctx.beginPath();
-    ctx.arc(cx, cy, z.r, 0, Math.PI * 2);
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (const v of verts) ctx.lineTo(v.x, v.y);
+    ctx.closePath();
     ctx.fill();
-    // Rotating dashed ring: the zones feel alive even when nothing moves.
-    ctx.setLineDash([8, 7]);
-    ctx.lineDashOffset = -((time || 0) * 12);
-    ctx.strokeStyle = z.ring;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, z.r, 0, Math.PI * 2);
+    ctx.shadowColor = edge;
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 3.5;
     ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
-    ctx.fillStyle = z.ring;
-    ctx.font = 'bold 13px Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(z.label, cx, cy - z.r - 8);
+    ctx.restore();
+    for (const v of verts) rivet(ctx, v.x, v.y);
+    // Zone label as a pill badge above the polygon, pushed clear of the boss.
+    const lp = badgeSpot(cx, cy - z.r - 16, S.boss ? { x: S.boss.x, y: S.boss.y, r: S.boss.r + 52 } : null);
+    pillBadge(ctx, lp.x, lp.y, z.label, z.id === 'cyan' ? '#8fc4ff' : '#f2c94c');
   }
 }
 
-// Luminous tension web: a translucent triangle joining the three combo zones,
-// cobalt web lines from each zone to its two nearest cauldrons, and crisp
-// technical micro-labels. Drawn under the pieces, above the parchment.
+// Luminous tether fields: a saturated amber triangle joining the three combo
+// zones, thick glowing cobalt tension beams from each zone to its two nearest
+// cauldrons, anchor rivets at every vertex, and high-contrast pill badges
+// pinned onto the lines. Drawn under the pieces, above the parchment.
 export function drawWeb(ctx, S) {
   const pts = ZONES.map((z) => ({ x: BOARD.x + z.cx * BOARD.w, y: BOARD.y + z.cy * BOARD.h }));
+  const avoid = S.boss ? { x: S.boss.x, y: S.boss.y, r: S.boss.r + 52 } : null;
   ctx.save();
-  // Triangle field.
-  ctx.fillStyle = 'rgba(212,160,23,0.07)';
+  // Amber triangle field: rich saturated fill, thick glowing border, rivets.
+  ctx.fillStyle = 'rgba(255,165,0,0.32)';
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   ctx.lineTo(pts[1].x, pts[1].y);
   ctx.lineTo(pts[2].x, pts[2].y);
   ctx.closePath();
   ctx.fill();
-  ctx.setLineDash([6, 6]);
-  ctx.strokeStyle = 'rgba(212,160,23,0.55)';
-  ctx.lineWidth = 1.5;
+  ctx.shadowColor = '#ffb020';
+  ctx.shadowBlur = 16;
+  ctx.strokeStyle = '#ff9d00';
+  ctx.lineWidth = 3.5;
   ctx.stroke();
-  ctx.setLineDash([]);
-  // Web lines: each zone to its two nearest cauldrons, with node dots.
+  ctx.restore();
+  for (const p of pts) rivet(ctx, p.x, p.y);
+  // Cobalt tension beams: wide translucent band + bright 3px glowing core line.
   for (const p of pts) {
     const near = S.cauldrons
       .map((c) => ({ c, d: Math.hypot(c.x - p.x, c.y - p.y) }))
       .sort((a, b) => a.d - b.d)
       .slice(0, 2);
     for (const { c } of near) {
-      ctx.strokeStyle = 'rgba(70,110,180,0.45)';
-      ctx.lineWidth = 1.2;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(40,140,255,0.28)';
+      ctx.lineWidth = 11;
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(c.x, c.y);
       ctx.stroke();
+      ctx.shadowColor = '#2f8cff';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = 'rgba(120,190,255,0.95)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.stroke();
+      ctx.restore();
       const mx = (p.x + c.x) / 2;
       const my = (p.y + c.y) / 2;
-      ctx.fillStyle = 'rgba(70,110,180,0.8)';
-      ctx.beginPath();
-      ctx.arc(mx, my, 3, 0, Math.PI * 2);
-      ctx.fill();
+      rivet(ctx, mx, my);
     }
   }
-  // Micro-labels, placed clear of the board centre where the boss fights.
-  ctx.font = 'bold 10px Georgia, serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(212,160,23,0.95)';
-  ctx.fillText('3X AMPLIFY', (pts[0].x + pts[1].x + pts[2].x) / 3, (pts[0].y + pts[1].y + pts[2].y) / 3 - 58);
-  ctx.fillStyle = 'rgba(70,110,180,0.95)';
-  ctx.fillText('95% TAUT', (pts[0].x + S.cauldrons[1].x) / 2 + 8, (pts[0].y + S.cauldrons[1].y) / 2 - 10);
-  ctx.fillStyle = 'rgba(160,58,44,0.95)';
-  ctx.fillText('BOIL ZONE', pts[2].x + 128, pts[2].y + 4);
-  ctx.restore();
+  // Pill badges pinned onto the lines and edges, pushed clear of the boss.
+  // TRI-TRAP READY! sits on the amber zone's quiet left edge, where live
+  // hit callouts almost never land, so the two texts cannot print over each other.
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const eAB = badgeSpot(pts[0].x - 118, pts[0].y, avoid);
+  pillBadge(ctx, eAB.x, eAB.y, 'TRI-TRAP READY!', '#f2c94c');
+  const eBC = badgeSpot(mid(pts[1], pts[2]).x, mid(pts[1], pts[2]).y, avoid);
+  pillBadge(ctx, eBC.x, eBC.y, '3X RICOCHET', '#f2c94c');
+  const webMid = badgeSpot((pts[1].x + S.cauldrons[1].x) / 2, (pts[1].y + S.cauldrons[1].y) / 2, avoid);
+  pillBadge(ctx, webMid.x, webMid.y, '95% TAUT', '#8fc4ff');
 }
 
 export function drawWalls(ctx, walls) {
@@ -230,16 +319,17 @@ function pushOutOf(x, y, avoid) {
 
 export function addCallout(callouts, x, y, text, color, avoid) {
   // Stack overlapping callouts upward so they never print on top of each other.
+  // The type is much bigger now, so the clash box is wider and taller.
   let yy = y;
   for (let tries = 0; tries < 4; tries++) {
-    const clash = callouts.some((c) => Math.abs(c.x - x) < 160 && Math.abs(c.y - yy) < 36);
+    const clash = callouts.some((c) => Math.abs(c.x - x) < 260 && Math.abs(c.y - yy) < 48);
     if (!clash) break;
-    yy -= 34;
+    yy -= 48;
   }
   // Then push clear of the boss's face, and clamp inside the board.
   const p = pushOutOf(x, yy, avoid);
-  const cx = Math.max(BOARD.x + 90, Math.min(BOARD.x + BOARD.w - 90, p.x));
-  const cy = Math.max(BOARD.y + 34, Math.min(BOARD.y + BOARD.h - 16, p.y));
+  const cx = Math.max(BOARD.x + 130, Math.min(BOARD.x + BOARD.w - 130, p.x));
+  const cy = Math.max(BOARD.y + 40, Math.min(BOARD.y + BOARD.h - 16, p.y));
   callouts.push({ x: cx, y: cy, text, color: color || '#c0392b', life: 1.1, max: 1.1 });
   if (callouts.length > 8) callouts.shift();
 }
@@ -256,19 +346,82 @@ export function drawCallouts(ctx, callouts) {
   ctx.textAlign = 'center';
   for (const c of callouts) {
     const a = Math.max(0, c.life / c.max);
-    const pop = 1 + (1 - a) * 0.15;
+    const pop = 1 + (1 - a) * 0.12;
     // Keep callouts inside the board so they never spill over the sidebar.
-    const cx = Math.max(BOARD.x + 80, Math.min(BOARD.x + BOARD.w - 80, c.x));
+    const cx = Math.max(BOARD.x + 130, Math.min(BOARD.x + BOARD.w - 130, c.x));
     ctx.save();
     ctx.translate(cx, c.y);
     ctx.scale(pop, pop);
     ctx.globalAlpha = a;
-    ctx.font = 'bold 18px Georgia, serif';
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#fdf6e3';
+    // Huge punchy comic type: white drop-shadow, thick dark outline, color fill.
+    ctx.font = 'bold 26px Georgia, serif';
+    const w = ctx.measureText(c.text).width;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = INK;
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = '#fdf6e3';
+    ctx.fillText(c.text, 3, 4);
     ctx.strokeText(c.text, 0, 0);
     ctx.fillStyle = c.color;
     ctx.fillText(c.text, 0, 0);
+    // Radiating impact lines around the text block.
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 3;
+    const hw = w / 2 + 12;
+    const hh = 20;
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2 + 0.35;
+      const ex = Math.cos(ang);
+      const ey = Math.sin(ang);
+      const r0 = Math.max(Math.abs(hw / (ex || 0.001)), Math.abs(hh / (ey || 0.001)));
+      const r1 = Math.min(r0, 90) + 4;
+      ctx.beginPath();
+      ctx.moveTo(ex * r1, ey * r1);
+      ctx.lineTo(ex * (r1 + 13), ey * (r1 + 13));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Starburst impact flashes: a glowing core + radiating rays, additive, fading.
+export function addFlash(flashes, x, y, big) {
+  flashes.push({ x, y, life: 0.35, max: 0.35, big: !!big });
+  if (flashes.length > 12) flashes.shift();
+}
+
+export function updateFlashes(flashes, dt) {
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    flashes[i].life -= dt;
+    if (flashes[i].life <= 0) flashes.splice(i, 1);
+  }
+}
+
+export function drawFlashes(ctx, flashes) {
+  for (const f of flashes) {
+    const a = Math.max(0, f.life / f.max);
+    const R = (f.big ? 52 : 34) * (1 + (1 - a) * 0.7);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a;
+    const grad = ctx.createRadialGradient(f.x, f.y, 2, f.x, f.y, R);
+    grad.addColorStop(0, 'rgba(255,240,180,0.95)');
+    grad.addColorStop(0.4, 'rgba(255,165,0,0.55)');
+    grad.addColorStop(1, 'rgba(255,165,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffd970';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2 + 0.4;
+      ctx.beginPath();
+      ctx.moveTo(f.x + Math.cos(ang) * R * 0.4, f.y + Math.sin(ang) * R * 0.4);
+      ctx.lineTo(f.x + Math.cos(ang) * R, f.y + Math.sin(ang) * R);
+      ctx.stroke();
+    }
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -316,11 +469,26 @@ export function updateDecals(decals, dt) {
 
 export function drawDecals(ctx, decals) {
   for (const d of decals) {
-    ctx.globalAlpha = 0.28 * Math.max(0, d.life / d.max);
+    const a = Math.max(0, d.life / d.max);
+    // Scorched crater: dark charred heart + glowing ember rim, fading with life.
+    ctx.save();
+    ctx.globalAlpha = 0.5 * a;
     ctx.fillStyle = '#2b2620';
     ctx.beginPath();
     ctx.ellipse(d.x, d.y, d.r, d.r * 0.55, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 0.55 * a;
+    ctx.strokeStyle = '#ff7a1a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y, d.r * 0.92, d.r * 0.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.35 * a;
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y, d.r * 0.55, d.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
 }

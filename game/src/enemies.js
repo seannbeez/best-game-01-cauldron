@@ -86,9 +86,23 @@ export function nearestCauldron(state, x, y) {
 }
 
 function shadow(ctx, x, y, r) {
-  ctx.fillStyle = 'rgba(43,38,32,0.18)';
+  // Soft dark oval directly beneath the body, so the sprite sits ON the tiles.
+  ctx.fillStyle = 'rgba(43,38,32,0.30)';
   ctx.beginPath();
-  ctx.ellipse(x, y + r * 0.85, r * 0.95, r * 0.32, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y + r * 0.85, r * 1.05, r * 0.36, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Watercolor wash over a finished body: soft light from the top-left, a darker
+// shade pooling at the bottom, so flat fills read as hand-painted.
+function watercolor(ctx, r) {
+  const g = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r * 1.2);
+  g.addColorStop(0, 'rgba(255,246,227,0.30)');
+  g.addColorStop(0.55, 'rgba(255,246,227,0)');
+  g.addColorStop(1, 'rgba(43,38,32,0.18)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -126,16 +140,30 @@ function face(ctx, x, y, r, seed, mood) {
   } else if (mood === 'dizzy') {
     ctx.moveTo(x - r * 0.2, y + r * 0.42);
     ctx.lineTo(x + r * 0.2, y + r * 0.42);
+  } else if (mood === 'angry') {
+    // Snarl: a jagged zigzag mouth.
+    ctx.moveTo(x - r * 0.28, y + r * 0.38);
+    ctx.lineTo(x - r * 0.14, y + r * 0.5);
+    ctx.lineTo(x, y + r * 0.38);
+    ctx.lineTo(x + r * 0.14, y + r * 0.5);
+    ctx.lineTo(x + r * 0.28, y + r * 0.38);
   } else {
     ctx.arc(x, y + r * 0.28, r * 0.3, Math.PI * 0.15, Math.PI * 0.85);
   }
   ctx.stroke();
-  // Eyebrows.
+  // Eyebrows: flat when idle, slanted down toward the nose when angry or hurt.
   ctx.beginPath();
-  ctx.moveTo(x - ex - er, y + ey - er * 1.9);
-  ctx.lineTo(x - ex + er, y + ey - er * (mood === 'hurt' ? 1.1 : 1.9));
-  ctx.moveTo(x + ex - er, y + ey - er * 1.9);
-  ctx.lineTo(x + ex + er, y + ey - er * (mood === 'hurt' ? 1.1 : 1.9));
+  if (mood === 'angry') {
+    ctx.moveTo(x - ex - er, y + ey - er * 2.6);
+    ctx.lineTo(x - ex + er, y + ey - er * 0.7);
+    ctx.moveTo(x + ex - er, y + ey - er * 0.7);
+    ctx.lineTo(x + ex + er, y + ey - er * 2.6);
+  } else {
+    ctx.moveTo(x - ex - er, y + ey - er * 1.9);
+    ctx.lineTo(x - ex + er, y + ey - er * (mood === 'hurt' ? 1.1 : 1.9));
+    ctx.moveTo(x + ex - er, y + ey - er * 1.9);
+    ctx.lineTo(x + ex + er, y + ey - er * (mood === 'hurt' ? 1.1 : 1.9));
+  }
   ctx.stroke();
 }
 
@@ -148,15 +176,16 @@ export function drawEnemy(ctx, e, time) {
   ctx.save();
   ctx.translate(0, -bob);
   ctx.scale(1 + sq, 1 - sq);
-  ctx.lineWidth = Math.max(2.5, r * 0.11);
+  // Bold 3px dark-sepia ink outline on every sprite.
+  ctx.lineWidth = Math.max(3, r * 0.11);
   ctx.lineJoin = 'round';
   ctx.strokeStyle = '#2b2620';
-  const mood = e.flash > 0 ? 'hurt' : (e.freeze > 0 ? 'dizzy' : 'idle');
-  if (e.type === 'gremlin') drawGremlin(ctx, e, r, mood);
-  else if (e.type === 'scroll') drawScroll(ctx, e, r, mood);
-  else if (e.type === 'teacup') drawTeacup(ctx, e, r, mood);
-  else if (e.type === 'wyvern') drawWyvern(ctx, e, r, mood);
-  else drawTyrant(ctx, e, r, mood);
+  const mood = e.flash > 0 ? 'hurt' : (e.freeze > 0 ? 'dizzy' : (e.type === 'tyrant' ? 'angry' : 'idle'));
+  if (e.type === 'gremlin') drawGremlin(ctx, e, r, mood, time);
+  else if (e.type === 'scroll') drawScroll(ctx, e, r, mood, time);
+  else if (e.type === 'teacup') drawTeacup(ctx, e, r, mood, time);
+  else if (e.type === 'wyvern') drawWyvern(ctx, e, r, mood, time);
+  else drawTyrant(ctx, e, r, mood, time);
   ctx.restore();
   // Health bar above (not for full-HP small fry).
   if (e.hp < e.maxHp) {
@@ -172,7 +201,8 @@ export function drawEnemy(ctx, e, time) {
   }
 }
 
-function drawGremlin(ctx, e, r, mood) {
+function drawGremlin(ctx, e, r, mood, time) {
+  void time;
   // Round purple ink blob with pointy ears and a cheeky grin.
   ctx.fillStyle = e.def.color;
   ctx.beginPath();
@@ -198,10 +228,12 @@ function drawGremlin(ctx, e, r, mood) {
   ctx.arc(-r * 0.5, r * 0.75, r * 0.09, 0, Math.PI * 2);
   ctx.arc(r * 0.45, r * 0.8, r * 0.07, 0, Math.PI * 2);
   ctx.fill();
+  watercolor(ctx, r);
   face(ctx, 0, -r * 0.08, r, e.faceSeed, mood);
 }
 
-function drawScroll(ctx, e, r, mood) {
+function drawScroll(ctx, e, r, mood, time) {
+  void time;
   // A rolled parchment scroll, unravelling, with sleepy eyes.
   ctx.fillStyle = '#e8cf9a';
   ctx.beginPath();
@@ -223,15 +255,17 @@ function drawScroll(ctx, e, r, mood) {
   ctx.arc(-r * 0.95, 0, r * 0.28, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = '#2b2620';
-  ctx.lineWidth = Math.max(2.5, r * 0.11);
+  ctx.lineWidth = Math.max(3, r * 0.11);
   ctx.beginPath();
   ctx.arc(r * 0.95, 0, r * 0.28, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  watercolor(ctx, r);
   face(ctx, 0, -r * 0.05, r * 0.9, e.faceSeed, mood);
 }
 
-function drawTeacup(ctx, e, r, mood) {
+function drawTeacup(ctx, e, r, mood, time) {
+  void time;
   // A cracked porcelain teacup, sloshing tea, handle on the right.
   ctx.fillStyle = e.def.color;
   ctx.beginPath();
@@ -260,32 +294,34 @@ function drawTeacup(ctx, e, r, mood) {
   ctx.lineTo(-r * 0.15, r * 0.3);
   ctx.lineTo(-r * 0.3, r * 0.6);
   ctx.stroke();
+  watercolor(ctx, r);
   face(ctx, 0, r * 0.05, r * 0.85, e.faceSeed, mood);
 }
 
-function drawWyvern(ctx, e, r, mood) {
-  // A long green void wyvern: serpent body, bat wings, horns.
+function drawWyvern(ctx, e, r, mood, time) {
+  // A long green void wyvern: serpent body, flapping bat wings, horns.
   ctx.fillStyle = e.def.color;
   ctx.beginPath();
   ctx.ellipse(0, r * 0.35, r * 0.9, r * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  // Wings.
+  // Wings flap: scale vertically around each wing's base with the wobble.
+  const flap = 1 + Math.sin(time * 6 + e.wobble) * 0.18;
   ctx.fillStyle = '#2c4a34';
-  ctx.beginPath();
-  ctx.moveTo(-r * 0.4, -r * 0.2);
-  ctx.quadraticCurveTo(-r * 1.5, -r * 1.1, -r * 1.35, -r * 0.1);
-  ctx.quadraticCurveTo(-r * 0.9, -r * 0.35, -r * 0.4, r * 0.1);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(r * 0.4, -r * 0.2);
-  ctx.quadraticCurveTo(r * 1.5, -r * 1.1, r * 1.35, -r * 0.1);
-  ctx.quadraticCurveTo(r * 0.9, -r * 0.35, r * 0.4, r * 0.1);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(s * r * 0.4, -r * 0.2);
+    ctx.scale(1, flap);
+    ctx.translate(-s * r * 0.4, r * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(s * r * 0.4, -r * 0.2);
+    ctx.quadraticCurveTo(s * r * 1.5, -r * 1.1, s * r * 1.35, -r * 0.1);
+    ctx.quadraticCurveTo(s * r * 0.9, -r * 0.35, s * r * 0.4, r * 0.1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
   // Head.
   ctx.fillStyle = e.def.color;
   ctx.beginPath();
@@ -302,11 +338,18 @@ function drawWyvern(ctx, e, r, mood) {
   ctx.lineTo(r * 0.15, -r * 0.9);
   ctx.fill();
   ctx.stroke();
+  watercolor(ctx, r);
   face(ctx, 0, -r * 0.5, r * 0.8, e.faceSeed, mood);
 }
 
-function drawTyrant(ctx, e, r, mood) {
+function drawTyrant(ctx, e, r, mood, time) {
   // The Tea-Kettle Tyrant: a huge brass kettle with a furious face, spout and lid.
+  // The lid wobbles on its hinge and steam puffs rise from the spout, animated.
+  const lidTilt = Math.sin(time * 2.5 + e.wobble) * 0.07;
+  ctx.save();
+  ctx.translate(0, -r * 0.55);
+  ctx.rotate(lidTilt);
+  ctx.translate(0, r * 0.55);
   ctx.fillStyle = '#8e2a20';
   ctx.beginPath();
   ctx.ellipse(0, -r * 0.55, r * 0.5, r * 0.28, 0, 0, Math.PI * 2);
@@ -317,6 +360,7 @@ function drawTyrant(ctx, e, r, mood) {
   ctx.arc(0, -r * 0.8, r * 0.16, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.restore();
   // Spout.
   ctx.fillStyle = e.def.color;
   ctx.beginPath();
@@ -336,31 +380,36 @@ function drawTyrant(ctx, e, r, mood) {
   ctx.beginPath();
   ctx.ellipse(0, r * 0.35, r * 0.55, r * 0.4, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Steam puffs.
+  // Steam puffs rising from the spout, drifting with time.
   ctx.fillStyle = 'rgba(253,246,227,0.75)';
-  ctx.beginPath();
-  ctx.arc(-r * 0.25, -r * 1.05, r * 0.14, 0, Math.PI * 2);
-  ctx.arc(r * 0.15, -r * 1.15, r * 0.18, 0, Math.PI * 2);
-  ctx.fill();
+  for (let i = 0; i < 3; i++) {
+    const ph = (time * 0.7 + i * 0.33) % 1;
+    const px = r * 1.15 + Math.sin(time * 1.4 + i * 2.1) * r * 0.1 - ph * r * 0.12;
+    const py = -r * 1.0 - ph * r * 0.55;
+    ctx.beginPath();
+    ctx.arc(px, py, r * (0.1 + ph * 0.1), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  watercolor(ctx, r);
   face(ctx, 0, -r * 0.05, r * 0.9, e.faceSeed, mood);
 }
 
 // Small portrait for the Threat Queue: draws the enemy type centered in a box.
 export function drawPortrait(ctx, type, cx, cy, size) {
   const def = ENEMY_TYPES[type];
-  const fake = { type, def, r: size * 0.42, faceSeed: 0.5, flash: 0, squash: 0, freeze: 0 };
+  const fake = { type, def, r: size * 0.42, faceSeed: 0.5, flash: 0, squash: 0, freeze: 0, wobble: 0 };
   ctx.save();
   ctx.translate(cx, cy);
   const scale = size / (def.r * 2.4);
   ctx.scale(scale, scale);
   // Reuse the body drawings without the shadow/health bar.
-  ctx.lineWidth = Math.max(2.5, fake.r * 0.11);
+  ctx.lineWidth = Math.max(3, fake.r * 0.11);
   ctx.lineJoin = 'round';
   ctx.strokeStyle = '#2b2620';
-  if (type === 'gremlin') drawGremlin(ctx, fake, fake.r, 'idle');
-  else if (type === 'scroll') drawScroll(ctx, fake, fake.r, 'idle');
-  else if (type === 'teacup') drawTeacup(ctx, fake, fake.r, 'idle');
-  else if (type === 'wyvern') drawWyvern(ctx, fake, fake.r, 'idle');
-  else drawTyrant(ctx, fake, fake.r, 'idle');
+  if (type === 'gremlin') drawGremlin(ctx, fake, fake.r, 'idle', 0);
+  else if (type === 'scroll') drawScroll(ctx, fake, fake.r, 'idle', 0);
+  else if (type === 'teacup') drawTeacup(ctx, fake, fake.r, 'idle', 0);
+  else if (type === 'wyvern') drawWyvern(ctx, fake, fake.r, 'idle', 0);
+  else drawTyrant(ctx, fake, fake.r, 'idle', 0);
   ctx.restore();
 }

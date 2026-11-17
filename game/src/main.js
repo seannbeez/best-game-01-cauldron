@@ -8,7 +8,7 @@ import { Sfx } from './audio.js';
 import { createInput } from './input.js';
 import { makeEnemy, updateEnemy } from './enemies.js';
 import { makePuck, launchPuck, updatePuck } from './puck.js';
-import { addCallout, addDecal, addFloater, burst, cauldronPositions, defaultWalls, updateCallouts, updateDecals, updateFloaters, updateParticles } from './zones.js';
+import { addCallout, addDecal, addFlash, addFloater, burst, cauldronPositions, defaultWalls, updateCallouts, updateDecals, updateFlashes, updateFloaters, updateParticles } from './zones.js';
 import { drawRelicOptions, hasRelic } from './relics.js';
 import { drawGame } from './render.js';
 
@@ -53,6 +53,7 @@ function freshState() {
     callouts: [],
     floaters: [],
     decals: [],
+    flashes: [],
     walls: defaultWalls(),
     cauldrons,
     aim: { active: false, sx: 0, sy: 0, cx: 0, cy: 0 },
@@ -155,6 +156,7 @@ function damageEnemy(e, dmg, kx, ky) {
   S.score += gained;
   addFloater(S.floaters, e.x, e.y - e.r - 6, '-' + dmg, '#c0392b', bossAvoid());
   burst(S.particles, e.x, e.y, '#d4a017', 6, 120);
+  addFlash(S.flashes, e.x, e.y, false);
   const kb = 70;
   e.x += kx * kb * 0.016;
   e.y += ky * kb * 0.016;
@@ -177,13 +179,19 @@ function registerHit() {
 
 function killEnemy(e) {
   e.dead = true;
-  if (S.boss === e) S.boss = null;
+  const wasBoss = S.boss === e;
+  if (wasBoss) S.boss = null;
   const goldGain = Math.round(e.def.gold * (S.relicFlags.ladle ? 1.25 : 1));
   S.gold += goldGain;
   S.score += Math.round(100 * (1 + Math.min(S.combo, 16) * 0.25));
   burst(S.particles, e.x, e.y, e.def.color, 16, 200);
   burst(S.particles, e.x, e.y, '#f2c94c', 8, 140);
-  addCallout(S.callouts, e.x, e.y - 30, e.def.short + ' DOWN!', '#3f8f7a', bossAvoid());
+  addFlash(S.flashes, e.x, e.y, true);
+  if (wasBoss) {
+    addCallout(S.callouts, e.x, e.y - e.r - 90, 'KETTLE CRACKED! -42', '#c0392b', { x: e.x, y: e.y, r: e.r + 52 });
+  } else {
+    addCallout(S.callouts, e.x, e.y - 30, e.def.short + ' DOWN!', '#3f8f7a', bossAvoid());
+  }
   sfx.bubble();
 }
 
@@ -244,6 +252,7 @@ function checkPuckCauldron(p) {
       S.gold += 25;
       addCallout(S.callouts, c.x, c.y - 52, 'DUNK! +' + bonus, '#3f8f7a');
       burst(S.particles, c.x, c.y - 6, '#7fb069', 18, 180);
+      addFlash(S.flashes, c.x, c.y - 6, true);
       sfx.bubble();
       p.vx = 0;
       p.vy = 0;
@@ -388,6 +397,7 @@ function explodeBomb(p) {
   addDecal(S.decals, p.x, p.y, 70);
   burst(S.particles, p.x, p.y, '#c0392b', 22, 260);
   burst(S.particles, p.x, p.y, '#f2c94c', 12, 180);
+  addFlash(S.flashes, p.x, p.y, true);
   S.shakeT = 0.45;
   for (const e of S.enemies) {
     const d = Math.hypot(e.x - p.x, e.y - p.y);
@@ -499,6 +509,7 @@ function update(dt) {
   S.time += dt;
   if (S.shakeT > 0) S.shakeT -= dt;
   updateParticles(S.particles, dt);
+  updateFlashes(S.flashes, dt);
   updateCallouts(S.callouts, dt);
   updateFloaters(S.floaters, dt);
   updateDecals(S.decals, dt);
@@ -555,8 +566,9 @@ function update(dt) {
   const pucks = S.puck ? [S.puck, ...S.extraPucks] : [...S.extraPucks];
   for (const p of pucks) {
     const wasResting = p.resting;
-    updatePuck(p, dt, S, () => {
+    updatePuck(p, dt, S, (bp) => {
       sfx.boing();
+      addFlash(S.flashes, bp.x, bp.y, false);
     });
     if (!wasResting && p.resting) {
       if (S.bombArmed) explodeBomb(p);
@@ -601,7 +613,8 @@ function update(dt) {
 function triggerZone(p, z) {
   if (z.id === 'amber') {
     p.bounceMul = 3;
-    addCallout(S.callouts, p.x, p.y - 30, '3X BOUNCE!', '#d4a017', bossAvoid());
+    addCallout(S.callouts, p.x, p.y - 30, 'TRIPLE BANK! x4', '#d4a017', bossAvoid());
+    addFlash(S.flashes, p.x, p.y, true);
     setTimeout(() => { p.bounceMul = 1; }, 3000);
   } else if (z.id === 'cyan') {
     for (const e of S.enemies) {
@@ -609,10 +622,12 @@ function triggerZone(p, z) {
       if (d < 130) damageEnemy(e, 42, (e.x - p.x) / (d || 1), (e.y - p.y) / (d || 1));
     }
     addCallout(S.callouts, p.x, p.y - 30, 'SPLASH -42!', '#3f8f7a', bossAvoid());
+    addFlash(S.flashes, p.x, p.y, true);
     sfx.splash();
   } else {
     p.overboil = 4;
-    addCallout(S.callouts, p.x, p.y - 30, 'OVERBOIL!', '#a03a2c', bossAvoid());
+    addCallout(S.callouts, p.x, p.y - 30, 'BOIL OVER!', '#a03a2c', bossAvoid());
+    addFlash(S.flashes, p.x, p.y, true);
     burst(S.particles, p.x, p.y, '#c0392b', 10, 140);
   }
 }
@@ -634,13 +649,17 @@ function setupStagedScene(shot) {
     S.screen = 'play';
     S.stage = 5;
     S.stageName = STAGES[4].name;
-    S.score = 1840;
+    S.score = 2600;
     S.gold = 145;
-    S.essence = 78;
-    S.combo = 9;
+    S.essence = 68;
+    S.combo = 12;
     S.maxCombo = 12;
-    S.grade = 'A';
+    S.grade = 'S';
     S.hotbarCd = [0, 4, 0, 9, 0, 14];
+    // Mid-game state: four illustrated Relics already equipped, so the
+    // RELICS HELD panel reads full, not empty.
+    S.relicsHeld = [RELICS[0], RELICS[6], RELICS[3], RELICS[4]];
+    recomputeRelicFlags();
     const boss = makeEnemy('tyrant', BOARD.x + 560, BOARD.y + 250, rng);
     boss.hp = 260;
     S.boss = boss;
@@ -674,6 +693,12 @@ function setupStagedScene(shot) {
     S.extraPucks = [ex];
     addDecal(S.decals, BOARD.x + 500, BOARD.y + 400, 60);
     addCallout(S.callouts, BOARD.x + 700, BOARD.y + 480, 'SPLASH -42!', '#3f8f7a');
+    addCallout(S.callouts, BOARD.x + 560, BOARD.y + 120, 'KETTLE CRACKED! -42', '#c0392b', { x: boss.x, y: boss.y, r: boss.r + 52 });
+    addCallout(S.callouts, BOARD.x + 330, BOARD.y + 470, 'TRIPLE BANK! x4', '#d4a017', { x: boss.x, y: boss.y, r: boss.r + 52 });
+    addFlash(S.flashes, BOARD.x + 560, BOARD.y + 250, true);
+    // Staged callouts live longer so they are still bold when the screenshot
+    // is taken (~0.7s after setup), instead of fading to a ghost.
+    for (const c of S.callouts) { c.life = 2.5; c.max = 2.5; }
     burst(S.particles, BOARD.x + 560, BOARD.y + 250, '#f2c94c', 14, 160);
     burst(S.particles, BOARD.x + 300, BOARD.y + 200, '#3f8f7a', 10, 140);
     return;

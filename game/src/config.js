@@ -73,9 +73,9 @@ export const HOTBAR = [
 
 // Translucent combo zones on the board (positions as fractions of the board).
 export const ZONES = [
-  { id: 'amber', label: '3X BOUNCE!', color: 'rgba(212,160,23,0.20)', ring: '#d4a017', cx: 0.30, cy: 0.30, r: 105 },
-  { id: 'cyan', label: 'SPLASH -42!', color: 'rgba(63,143,122,0.20)', ring: '#3f8f7a', cx: 0.70, cy: 0.58, r: 115 },
-  { id: 'crimson', label: 'OVERBOIL!', color: 'rgba(160,58,44,0.18)', ring: '#a03a2c', cx: 0.50, cy: 0.78, r: 95 },
+  { id: 'amber', label: '3X BOUNCE!', color: 'rgba(255,165,0,0.32)', ring: '#ff9d00', cx: 0.30, cy: 0.30, r: 105 },
+  { id: 'cyan', label: 'SPLASH -42!', color: 'rgba(40,140,255,0.28)', ring: '#2f8cff', cx: 0.70, cy: 0.58, r: 115 },
+  { id: 'crimson', label: 'BOIL OVER!', color: 'rgba(220,60,40,0.30)', ring: '#e04028', cx: 0.50, cy: 0.78, r: 95 },
 ];
 
 export const PUCK_R = 14;

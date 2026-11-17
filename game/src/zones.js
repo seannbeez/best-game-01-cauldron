@@ -34,7 +34,7 @@ function wallArc(cx, cy, r, a0, a1) {
   return pts;
 }
 
-export function drawZones(ctx) {
+export function drawZones(ctx, time) {
   for (const z of ZONES) {
     const cx = BOARD.x + z.cx * BOARD.w;
     const cy = BOARD.y + z.cy * BOARD.h;
@@ -42,18 +42,73 @@ export function drawZones(ctx) {
     ctx.beginPath();
     ctx.arc(cx, cy, z.r, 0, Math.PI * 2);
     ctx.fill();
+    // Rotating dashed ring: the zones feel alive even when nothing moves.
     ctx.setLineDash([8, 7]);
+    ctx.lineDashOffset = -((time || 0) * 12);
     ctx.strokeStyle = z.ring;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(cx, cy, z.r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
     ctx.fillStyle = z.ring;
     ctx.font = 'bold 13px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText(z.label, cx, cy - z.r - 8);
   }
+}
+
+// Luminous tension web: a translucent triangle joining the three combo zones,
+// cobalt web lines from each zone to its two nearest cauldrons, and crisp
+// technical micro-labels. Drawn under the pieces, above the parchment.
+export function drawWeb(ctx, S) {
+  const pts = ZONES.map((z) => ({ x: BOARD.x + z.cx * BOARD.w, y: BOARD.y + z.cy * BOARD.h }));
+  ctx.save();
+  // Triangle field.
+  ctx.fillStyle = 'rgba(212,160,23,0.07)';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  ctx.lineTo(pts[1].x, pts[1].y);
+  ctx.lineTo(pts[2].x, pts[2].y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = 'rgba(212,160,23,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Web lines: each zone to its two nearest cauldrons, with node dots.
+  for (const p of pts) {
+    const near = S.cauldrons
+      .map((c) => ({ c, d: Math.hypot(c.x - p.x, c.y - p.y) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2);
+    for (const { c } of near) {
+      ctx.strokeStyle = 'rgba(70,110,180,0.45)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.stroke();
+      const mx = (p.x + c.x) / 2;
+      const my = (p.y + c.y) / 2;
+      ctx.fillStyle = 'rgba(70,110,180,0.8)';
+      ctx.beginPath();
+      ctx.arc(mx, my, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // Micro-labels, placed clear of the board centre where the boss fights.
+  ctx.font = 'bold 10px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(212,160,23,0.95)';
+  ctx.fillText('3X AMPLIFY', (pts[0].x + pts[1].x + pts[2].x) / 3, (pts[0].y + pts[1].y + pts[2].y) / 3 - 58);
+  ctx.fillStyle = 'rgba(70,110,180,0.95)';
+  ctx.fillText('95% TAUT', (pts[0].x + S.cauldrons[1].x) / 2 + 8, (pts[0].y + S.cauldrons[1].y) / 2 - 10);
+  ctx.fillStyle = 'rgba(160,58,44,0.95)';
+  ctx.fillText('BOIL ZONE', pts[2].x + 128, pts[2].y + 4);
+  ctx.restore();
 }
 
 export function drawWalls(ctx, walls) {
@@ -113,7 +168,15 @@ export function drawCauldrons(ctx, cauldrons, time) {
       ctx.arc(bx, by, 2.5 + (i % 2), 0, Math.PI * 2);
       ctx.fill();
     }
-    // Steam.
+    // Steam: rising rings that expand and fade.
+    for (let i = 0; i < 2; i++) {
+      const frac = ((time * 0.45 + i * 0.5 + c.x * 0.01) % 1 + 1) % 1;
+      ctx.strokeStyle = `rgba(253,246,227,${0.35 * (1 - frac)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y - CAULDRON_R - 8 - frac * 26, 6 + frac * 16, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(253,246,227,0.35)';
     ctx.beginPath();
     ctx.arc(c.x - 8, c.y - CAULDRON_R - 6 - Math.sin(time + c.x) * 2, 5, 0, Math.PI * 2);
@@ -154,7 +217,18 @@ export function drawParticles(ctx, particles) {
   ctx.globalAlpha = 1;
 }
 
-export function addCallout(callouts, x, y, text, color) {
+// Push a point out of a keep-out circle (the boss's face), if it lies inside.
+function pushOutOf(x, y, avoid) {
+  if (!avoid) return { x, y };
+  const dx = x - avoid.x;
+  const dy = y - avoid.y;
+  const d = Math.hypot(dx, dy);
+  if (d >= avoid.r) return { x, y };
+  const ang = d < 1 ? -Math.PI / 2 : Math.atan2(dy, dx);
+  return { x: avoid.x + Math.cos(ang) * (avoid.r + 10), y: avoid.y + Math.sin(ang) * (avoid.r + 10) };
+}
+
+export function addCallout(callouts, x, y, text, color, avoid) {
   // Stack overlapping callouts upward so they never print on top of each other.
   let yy = y;
   for (let tries = 0; tries < 4; tries++) {
@@ -162,7 +236,11 @@ export function addCallout(callouts, x, y, text, color) {
     if (!clash) break;
     yy -= 34;
   }
-  callouts.push({ x, y: yy, text, color: color || '#c0392b', life: 1.1, max: 1.1 });
+  // Then push clear of the boss's face, and clamp inside the board.
+  const p = pushOutOf(x, yy, avoid);
+  const cx = Math.max(BOARD.x + 90, Math.min(BOARD.x + BOARD.w - 90, p.x));
+  const cy = Math.max(BOARD.y + 34, Math.min(BOARD.y + BOARD.h - 16, p.y));
+  callouts.push({ x: cx, y: cy, text, color: color || '#c0392b', life: 1.1, max: 1.1 });
   if (callouts.length > 8) callouts.shift();
 }
 
@@ -196,8 +274,9 @@ export function drawCallouts(ctx, callouts) {
   ctx.globalAlpha = 1;
 }
 
-export function addFloater(floaters, x, y, text, color) {
-  floaters.push({ x, y, text, color: color || '#2b2620', life: 0.9, max: 0.9 });
+export function addFloater(floaters, x, y, text, color, avoid) {
+  const p = pushOutOf(x, y, avoid);
+  floaters.push({ x: p.x, y: p.y, text, color: color || '#2b2620', life: 0.9, max: 0.9 });
   if (floaters.length > 24) floaters.shift();
 }
 

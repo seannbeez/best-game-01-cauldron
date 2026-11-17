@@ -77,6 +77,12 @@ function launcherPos() {
   return { x: BOARD.x + BOARD.w / 2, y: BOARD.y + BOARD.h * 0.62 };
 }
 
+// Keep-out circle around the boss so callouts and damage numbers never print
+// over the Tyrant's face: they are pushed to the ring outside it instead.
+function bossAvoid() {
+  return S.boss ? { x: S.boss.x, y: S.boss.y, r: S.boss.r + 52 } : null;
+}
+
 function recomputeRelicFlags() {
   S.relicFlags = {};
   for (const r of S.relicsHeld) S.relicFlags[r.id] = true;
@@ -103,7 +109,7 @@ function startStage(n) {
   S.spawnQueue = STAGES[n - 1].queue.slice();
   S.spawnNames = S.spawnQueue.map((t) => ENEMY_TYPES[t].name);
   S.spawnHp = S.spawnQueue.map((t) => ENEMY_TYPES[t].hp);
-  S.spawnTimer = 0.9;
+  S.spawnTimer = 0.6;
   S.boss = null;
   const lp = launcherPos();
   S.puck = makePuck(lp.x, lp.y);
@@ -147,14 +153,14 @@ function damageEnemy(e, dmg, kx, ky) {
   const mult = 1 + Math.min(S.combo, 16) * 0.25;
   const gained = Math.round(dmg * mult);
   S.score += gained;
-  addFloater(S.floaters, e.x, e.y - e.r - 6, '-' + dmg, '#c0392b');
+  addFloater(S.floaters, e.x, e.y - e.r - 6, '-' + dmg, '#c0392b', bossAvoid());
   burst(S.particles, e.x, e.y, '#d4a017', 6, 120);
   const kb = 70;
   e.x += kx * kb * 0.016;
   e.y += ky * kb * 0.016;
   if (S.puck && S.puck.frost) {
     e.freeze = 3;
-    addFloater(S.floaters, e.x, e.y - e.r - 24, 'FROZEN!', '#7fb8c9');
+    addFloater(S.floaters, e.x, e.y - e.r - 24, 'FROZEN!', '#7fb8c9', bossAvoid());
   }
   registerHit();
   sfx.thud();
@@ -177,7 +183,7 @@ function killEnemy(e) {
   S.score += Math.round(100 * (1 + Math.min(S.combo, 16) * 0.25));
   burst(S.particles, e.x, e.y, e.def.color, 16, 200);
   burst(S.particles, e.x, e.y, '#f2c94c', 8, 140);
-  addCallout(S.callouts, e.x, e.y - 30, e.def.short + ' DOWN!', '#3f8f7a');
+  addCallout(S.callouts, e.x, e.y - 30, e.def.short + ' DOWN!', '#3f8f7a', bossAvoid());
   sfx.bubble();
 }
 
@@ -209,7 +215,10 @@ function checkCauldrons() {
       const d = Math.hypot(e.x - c.x, e.y - c.y);
       if (d < 36 + e.r * 0.5) {
         e.dead = true;
-        const drain = S.relicFlags.shield ? 5 : 10;
+        // Stage-scaled drain: gentle in Stage 1 so a new player can sling freely
+        // and learn, full bite from Stage 4 on. Porcelain Shield halves it (min 2).
+        const baseDrain = [0, 4, 6, 8, 10, 10][S.stage] || 10;
+        const drain = S.relicFlags.shield ? Math.max(2, Math.round(baseDrain / 2)) : baseDrain;
         S.essence -= drain;
         addCallout(S.callouts, c.x, c.y - 52, 'ESSENCE -' + drain + '!', '#a03a2c');
         burst(S.particles, c.x, c.y - 6, '#7fb069', 10, 120);
@@ -528,7 +537,7 @@ function update(dt) {
     S.spawnTimer -= dt;
     if (S.spawnTimer <= 0) {
       spawnNext();
-      S.spawnTimer = 1.1;
+      S.spawnTimer = 0.8;
     }
   }
   if (S.spawnMinion) {
@@ -592,18 +601,18 @@ function update(dt) {
 function triggerZone(p, z) {
   if (z.id === 'amber') {
     p.bounceMul = 3;
-    addCallout(S.callouts, p.x, p.y - 30, '3X BOUNCE!', '#d4a017');
+    addCallout(S.callouts, p.x, p.y - 30, '3X BOUNCE!', '#d4a017', bossAvoid());
     setTimeout(() => { p.bounceMul = 1; }, 3000);
   } else if (z.id === 'cyan') {
     for (const e of S.enemies) {
       const d = Math.hypot(e.x - p.x, e.y - p.y);
       if (d < 130) damageEnemy(e, 42, (e.x - p.x) / (d || 1), (e.y - p.y) / (d || 1));
     }
-    addCallout(S.callouts, p.x, p.y - 30, 'SPLASH -42!', '#3f8f7a');
+    addCallout(S.callouts, p.x, p.y - 30, 'SPLASH -42!', '#3f8f7a', bossAvoid());
     sfx.splash();
   } else {
     p.overboil = 4;
-    addCallout(S.callouts, p.x, p.y - 30, 'OVERBOIL!', '#a03a2c');
+    addCallout(S.callouts, p.x, p.y - 30, 'OVERBOIL!', '#a03a2c', bossAvoid());
     burst(S.particles, p.x, p.y, '#c0392b', 10, 140);
   }
 }
@@ -635,6 +644,8 @@ function setupStagedScene(shot) {
     const boss = makeEnemy('tyrant', BOARD.x + 560, BOARD.y + 250, rng);
     boss.hp = 260;
     S.boss = boss;
+    // A packed battlefield: the Tyrant plus 10 minions in loose formations,
+    // so the board reads dense and dramatic at a glance.
     S.enemies = [
       boss,
       makeEnemy('wyvern', BOARD.x + 300, BOARD.y + 200, rng),
@@ -642,10 +653,15 @@ function setupStagedScene(shot) {
       makeEnemy('gremlin', BOARD.x + 420, BOARD.y + 420, rng),
       makeEnemy('scroll', BOARD.x + 760, BOARD.y + 180, rng),
       makeEnemy('wyvern', BOARD.x + 200, BOARD.y + 430, rng),
+      makeEnemy('gremlin', BOARD.x + 340, BOARD.y + 110, rng),
+      makeEnemy('scroll', BOARD.x + 640, BOARD.y + 470, rng),
+      makeEnemy('teacup', BOARD.x + 240, BOARD.y + 290, rng),
+      makeEnemy('gremlin', BOARD.x + 800, BOARD.y + 350, rng),
+      makeEnemy('wyvern', BOARD.x + 480, BOARD.y + 80, rng),
     ];
-    S.spawnQueue = ['gremlin', 'scroll'];
-    S.spawnNames = ['Ink Gremlin', 'Soggy Scroll'];
-    S.spawnHp = [20, 40];
+    S.spawnQueue = ['gremlin', 'scroll', 'wyvern', 'teacup', 'gremlin', 'scroll'];
+    S.spawnNames = ['Ink Gremlin', 'Soggy Scroll', 'Void Wyvern', 'Cracked Teacup', 'Ink Gremlin', 'Soggy Scroll'];
+    S.spawnHp = [20, 40, 50, 70, 20, 40];
     S.puck = makePuck(BOARD.x + 480, BOARD.y + 330);
     launchPuck(S.puck, 0.8, -0.6, 640);
     S.puck.trail = [

@@ -68,7 +68,7 @@ export function updateEnemy(e, dt, state) {
   e.y += my * dt;
   if (e.type === 'tyrant') {
     e.minionTimer -= dt;
-    if (e.minionTimer <= 0 && state.enemies.length < 9) {
+    if (e.minionTimer <= 0 && state.enemies.length < 10) {
       e.minionTimer = 6;
       state.spawnMinion = true;
     }

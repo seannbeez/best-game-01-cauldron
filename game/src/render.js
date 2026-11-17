@@ -5,13 +5,25 @@
 import { BOARD, BOTTOM, COLORS, HOTBAR, SIDE, TOP, VIEW } from './config.js';
 import { drawEnemy, drawPortrait } from './enemies.js';
 import { drawRelicIcon } from './relics.js';
-import { drawCallouts, drawCauldrons, drawDecals, drawFloaters, drawParticles, drawWalls, drawZones } from './zones.js';
+import { drawCallouts, drawCauldrons, drawDecals, drawFloaters, drawParticles, drawWalls, drawWeb, drawZones } from './zones.js';
 import { drawPuck } from './puck.js';
 
 let parchmentCache = null;
 
 function font(size, bold) {
   return (bold ? 'bold ' : '') + size + "px Georgia, 'Times New Roman', serif";
+}
+
+// Shrink a bold/regular font until the text fits maxW (never below 12px).
+// Returns the font string to use; guarantees no clipped text on any edge.
+function fitFont(ctx, text, maxW, size, bold) {
+  let s = size;
+  while (s > 12) {
+    ctx.font = font(s, bold);
+    if (ctx.measureText(text).width <= maxW) break;
+    s -= 2;
+  }
+  return font(s, bold);
 }
 
 function parchmentTexture() {
@@ -22,6 +34,47 @@ function parchmentTexture() {
   const g = c.getContext('2d');
   g.fillStyle = COLORS.parchment;
   g.fillRect(0, 0, BOARD.w, BOARD.h);
+  // Hand-inked alchemical stone-tile grid: per-tile shade, grout lines,
+  // corner brass rivets along the outer ring.
+  const TILE = 92;
+  let tseed = 7;
+  const trnd = () => { tseed = (tseed * 1664525 + 1013904223) >>> 0; return tseed / 4294967296; };
+  for (let ty = 0; ty < BOARD.h / TILE; ty++) {
+    for (let tx = 0; tx < BOARD.w / TILE; tx++) {
+      const shade = trnd();
+      if (shade > 0.55) {
+        g.fillStyle = `rgba(120,100,60,${0.02 + shade * 0.03})`;
+        g.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+      }
+    }
+  }
+  g.strokeStyle = 'rgba(90,70,40,0.10)';
+  g.lineWidth = 1.5;
+  for (let x = TILE; x < BOARD.w; x += TILE) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, BOARD.h); g.stroke();
+  }
+  for (let y = TILE; y < BOARD.h; y += TILE) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(BOARD.w, y); g.stroke();
+  }
+  // Brass rivets at the outer-ring intersections.
+  for (let x = TILE; x < BOARD.w; x += TILE) {
+    for (const y of [0, BOARD.h]) {
+      g.fillStyle = '#d4a017';
+      g.beginPath(); g.arc(x, y === 0 ? 6 : BOARD.h - 6, 3, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(43,38,32,0.6)';
+      g.lineWidth = 1;
+      g.stroke();
+    }
+  }
+  for (let y = TILE; y < BOARD.h; y += TILE) {
+    for (const x of [0, BOARD.w]) {
+      g.fillStyle = '#d4a017';
+      g.beginPath(); g.arc(x === 0 ? 6 : BOARD.w - 6, y, 3, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(43,38,32,0.6)';
+      g.lineWidth = 1;
+      g.stroke();
+    }
+  }
   // Watercolor stains.
   let seed = 42;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
@@ -279,6 +332,17 @@ function drawBoard(ctx, S) {
   ctx.lineWidth = 1.5;
   wobblyRect(ctx, BOARD.x + 8, BOARD.y + 8, BOARD.w - 16, BOARD.h - 16, 4, 7.7);
   ctx.stroke();
+  // Rune-etched ticks along the inner border (small perpendicular marks).
+  ctx.strokeStyle = 'rgba(43,38,32,0.28)';
+  ctx.lineWidth = 1.2;
+  for (let x = BOARD.x + 24; x < BOARD.x + BOARD.w - 16; x += 26) {
+    ctx.beginPath(); ctx.moveTo(x, BOARD.y + 8); ctx.lineTo(x, BOARD.y + 15); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, BOARD.y + BOARD.h - 8); ctx.lineTo(x, BOARD.y + BOARD.h - 15); ctx.stroke();
+  }
+  for (let y = BOARD.y + 24; y < BOARD.y + BOARD.h - 16; y += 26) {
+    ctx.beginPath(); ctx.moveTo(BOARD.x + 8, y); ctx.lineTo(BOARD.x + 15, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(BOARD.x + BOARD.w - 8, y); ctx.lineTo(BOARD.x + BOARD.w - 15, y); ctx.stroke();
+  }
   // Grid dots.
   ctx.fillStyle = 'rgba(43,38,32,0.14)';
   for (let x = BOARD.x + 40; x < BOARD.x + BOARD.w - 20; x += 46) {
@@ -289,7 +353,8 @@ function drawBoard(ctx, S) {
     }
   }
   drawDecals(ctx, S.decals);
-  drawZones(ctx);
+  drawZones(ctx, S.time);
+  drawWeb(ctx, S);
   drawWalls(ctx, S.walls);
   drawCauldrons(ctx, S.cauldrons, S.time);
   // Enemies, pucks, particles, callouts.
@@ -372,75 +437,106 @@ function drawSidebar(ctx, S) {
   ctx.fillStyle = 'rgba(253,246,227,0.55)';
   ctx.font = font(11, false);
   ctx.fillText(S.enemies.length + ' on the board', SIDE.x + 14, SIDE.y + 44);
-  // Queue rows: upcoming fiends first, then fiends already on the board.
+  // Threat queue: 6 dense rows (upcoming fiends first, then fiends on the board).
   const rows = [];
-  for (let i = 0; i < S.spawnQueue.length && rows.length < 5; i++) {
+  for (let i = 0; i < S.spawnQueue.length && rows.length < 6; i++) {
     rows.push({ type: S.spawnQueue[i], name: S.spawnNames[i], hp: S.spawnHp[i], max: S.spawnHp[i] });
   }
   for (const e of S.enemies) {
-    if (rows.length >= 5) break;
+    if (rows.length >= 6) break;
     rows.push({ type: e.type, name: e.def.name, hp: Math.max(0, Math.round(e.hp)), max: e.maxHp });
   }
-  for (let i = 0; i < 5; i++) {
-    const ry = SIDE.y + 62 + i * 56;
+  for (let i = 0; i < 6; i++) {
+    const ry = SIDE.y + 58 + i * 48;
     ctx.fillStyle = 'rgba(20,31,56,0.55)';
-    ctx.fillRect(SIDE.x + 12, ry, SIDE.w - 24, 48);
+    ctx.fillRect(SIDE.x + 12, ry, SIDE.w - 24, 42);
     ctx.strokeStyle = 'rgba(242,201,76,0.35)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(SIDE.x + 12, ry, SIDE.w - 24, 48);
+    ctx.strokeRect(SIDE.x + 12, ry, SIDE.w - 24, 42);
     const row = rows[i];
     if (!row) {
       ctx.fillStyle = 'rgba(253,246,227,0.4)';
       ctx.font = font(12, false);
-      ctx.fillText('— clear —', SIDE.x + 66, ry + 24);
+      ctx.fillText('— clear —', SIDE.x + 62, ry + 21);
       continue;
     }
-    drawPortrait(ctx, row.type, SIDE.x + 38, ry + 24, 40);
+    drawPortrait(ctx, row.type, SIDE.x + 36, ry + 21, 36);
     ctx.fillStyle = '#fdf6e3';
-    ctx.font = font(13, true);
+    ctx.font = font(12, true);
     ctx.textAlign = 'left';
-    ctx.fillText(row.name, SIDE.x + 66, ry + 16);
+    ctx.fillText(row.name, SIDE.x + 62, ry + 14);
     ctx.fillStyle = 'rgba(253,246,227,0.25)';
-    ctx.fillRect(SIDE.x + 66, ry + 30, 150, 8);
+    ctx.fillRect(SIDE.x + 62, ry + 26, 140, 7);
     ctx.fillStyle = '#3f8f7a';
-    ctx.fillRect(SIDE.x + 66, ry + 30, 150 * Math.max(0, row.hp / row.max), 8);
+    ctx.fillRect(SIDE.x + 62, ry + 26, 140 * Math.max(0, row.hp / row.max), 7);
     ctx.fillStyle = 'rgba(253,246,227,0.7)';
-    ctx.font = font(11, false);
-    ctx.fillText(row.hp + ' HP', SIDE.x + 224, ry + 34);
+    ctx.font = font(10, false);
+    ctx.fillText(row.hp + ' HP', SIDE.x + 208, ry + 30);
   }
   // Relics held.
-  const ry = SIDE.y + 62 + 5 * 56 + 14;
+  const ry = SIDE.y + 58 + 6 * 48 + 12;
   ctx.fillStyle = '#f2c94c';
   ctx.font = font(15, true);
   ctx.fillText('RELICS HELD (' + S.relicsHeld.length + '/5)', SIDE.x + 14, ry);
   for (let i = 0; i < 5; i++) {
-    const sx = SIDE.x + 14 + i * 58;
-    const sy = ry + 16;
+    const sx = SIDE.x + 14 + i * 56;
+    const sy = ry + 14;
     ctx.fillStyle = 'rgba(20,31,56,0.55)';
-    ctx.fillRect(sx, sy, 50, 50);
+    ctx.fillRect(sx, sy, 46, 46);
     ctx.strokeStyle = S.relicsHeld[i] ? '#f2c94c' : 'rgba(253,246,227,0.3)';
     ctx.setLineDash(S.relicsHeld[i] ? [] : [4, 4]);
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(sx, sy, 50, 50);
+    ctx.strokeRect(sx, sy, 46, 46);
     ctx.setLineDash([]);
-    if (S.relicsHeld[i]) drawRelicIcon(ctx, S.relicsHeld[i].id, sx + 25, sy + 25, 36);
+    if (S.relicsHeld[i]) drawRelicIcon(ctx, S.relicsHeld[i].id, sx + 23, sy + 23, 34);
     else {
       ctx.fillStyle = 'rgba(253,246,227,0.35)';
       ctx.font = font(16, true);
       ctx.textAlign = 'center';
-      ctx.fillText('?', sx + 25, sy + 26);
+      ctx.fillText('?', sx + 23, sy + 24);
     }
   }
   // Held relic names.
   ctx.textAlign = 'left';
   ctx.font = font(11, false);
   ctx.fillStyle = 'rgba(253,246,227,0.75)';
-  let ny = ry + 84;
+  let ny = ry + 76;
   for (const r of S.relicsHeld) {
     ctx.fillText('· ' + r.name + '  —  ' + r.tag, SIDE.x + 14, ny);
-    ny += 16;
+    ny += 15;
   }
   if (S.relicsHeld.length === 0) ctx.fillText('No relics yet — clear a stage!', SIDE.x + 14, ny);
+  // Relic tooltip: hovering a held relic slot shows its full card to the left.
+  if (S.hover) {
+    for (let i = 0; i < 5; i++) {
+      const r = S.relicsHeld[i];
+      if (!r) continue;
+      const sx = SIDE.x + 14 + i * 56;
+      const sy = ry + 14;
+      if (S.hover.x >= sx && S.hover.x <= sx + 46 && S.hover.y >= sy && S.hover.y <= sy + 46) {
+        const tw = 240;
+        const th = 72;
+        const tx = Math.max(8, SIDE.x - tw - 10);
+        const ty = Math.max(TOP.h + 6, Math.min(S.hover.y - 12, VIEW.h - th - 8));
+        ctx.fillStyle = 'rgba(20,31,56,0.96)';
+        ctx.fillRect(tx, ty, tw, th);
+        ctx.strokeStyle = '#f2c94c';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(tx, ty, tw, th);
+        ctx.fillStyle = '#f2c94c';
+        ctx.font = font(13, true);
+        ctx.textAlign = 'left';
+        ctx.fillText(r.name, tx + 12, ty + 20);
+        ctx.fillStyle = '#fdf6e3';
+        ctx.font = font(12, false);
+        ctx.fillText(r.tag, tx + 12, ty + 38);
+        ctx.fillStyle = 'rgba(253,246,227,0.75)';
+        ctx.font = font(11, false);
+        wrapText(ctx, r.desc, tx + 12, ty + 54, tw - 24, 14);
+        break;
+      }
+    }
+  }
 }
 
 function drawBottomBar(ctx, S) {
@@ -474,7 +570,12 @@ function drawBottomBar(ctx, S) {
     ctx.strokeStyle = ready ? '#f2c94c' : 'rgba(253,246,227,0.3)';
     ctx.lineWidth = ready ? 2 : 1;
     ctx.strokeRect(x, y, 54, 48);
-    drawHotbarIcon(ctx, h.id, x + 27, y + 24, 30);
+    if (ready) {
+      // Gold underline under a ready slot: readable at thumbnail size.
+      ctx.fillStyle = '#f2c94c';
+      ctx.fillRect(x + 8, y + 44, 38, 3);
+    }
+    drawHotbarIcon(ctx, h.id, x + 27, y + 24, 34);
     // Keybind badge.
     ctx.fillStyle = '#c0392b';
     ctx.beginPath();
@@ -493,25 +594,41 @@ function drawBottomBar(ctx, S) {
     }
     S.ui.buttons.push({ id: 'hotbar' + i, x, y, w: 54, h: 48 });
   }
-  // Combo + grade.
+  // Combo + grade: glowing badge and a ringed medal, sharp at thumbnail size.
   const combo = S.combo;
   const mult = (1 + Math.min(combo, 16) * 0.25).toFixed(2);
+  ctx.save();
+  ctx.shadowColor = '#f2c94c';
+  ctx.shadowBlur = 12;
   ctx.textAlign = 'right';
   ctx.fillStyle = '#f2c94c';
   ctx.font = font(24, true);
   ctx.fillText('COMBO x' + mult, 1150, BOTTOM.y + 24);
+  ctx.restore();
   ctx.fillStyle = 'rgba(253,246,227,0.7)';
   ctx.font = font(12, false);
+  ctx.textAlign = 'right';
   ctx.fillText(combo + ' hits in a row', 1150, BOTTOM.y + 46);
   // Grade badge.
   const gx = 1218;
   const gy = BOTTOM.y + 31;
+  ctx.save();
+  ctx.shadowColor = gradeColor(S.grade);
+  ctx.shadowBlur = 10;
   ctx.fillStyle = gradeColor(S.grade);
   ctx.beginPath();
   ctx.arc(gx, gy, 24, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = '#f2c94c';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(gx, gy, 27, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.strokeStyle = '#fdf6e3';
   ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(gx, gy, 24, 0, Math.PI * 2);
   ctx.stroke();
   ctx.fillStyle = '#fdf6e3';
   ctx.font = font(24, true);
@@ -606,8 +723,10 @@ function dimBoard(ctx) {
 
 function drawTitle(ctx, S) {
   dimBoard(ctx);
-  const cx = BOARD.x + BOARD.w / 2;
-  const card = { x: cx - 420, y: 84, w: 840, h: 540 };
+  // Centered on the VIEWPORT (not the board) with a guaranteed side margin,
+  // and every title line is fit-measured so nothing can ever clip an edge.
+  const cx = VIEW.w / 2;
+  const card = { x: cx - 420, y: 88, w: 840, h: 524 };
   ctx.fillStyle = COLORS.parchment;
   wobblyRect(ctx, card.x, card.y, card.w, card.h, 8, 9.1);
   ctx.fill();
@@ -620,10 +739,10 @@ function drawTitle(ctx, S) {
   ctx.stroke();
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.ink;
-  ctx.font = font(44, true);
+  ctx.font = fitFont(ctx, "ALCHEMIST'S PINBALL", card.w - 72, 44, true);
   ctx.fillText("ALCHEMIST'S PINBALL", cx, card.y + 64);
   ctx.fillStyle = COLORS.red;
-  ctx.font = font(26, true);
+  ctx.font = fitFont(ctx, '· CAULDRON BOUNCE ·', card.w - 72, 26, true);
   ctx.fillText('· CAULDRON BOUNCE ·', cx, card.y + 100);
   ctx.fillStyle = COLORS.inkSoft;
   ctx.font = font(14, false);
@@ -661,8 +780,8 @@ function drawTitle(ctx, S) {
   button(ctx, S, 'play', cx - 130, card.y + 402, 260, 56, '▶  PLAY', { red: true, fontSize: 24 });
   ctx.fillStyle = COLORS.inkSoft;
   ctx.font = font(12, false);
-  ctx.fillText('Drag / touch to sling · Keys 1–6 abilities · P pause · M mute · R restart', cx, card.y + 492);
-  ctx.fillText('Clear all 5 stages — the Tea-Kettle Tyrant waits at the end!', cx, card.y + 514);
+  ctx.fillText('Drag / touch to sling · Keys 1–6 abilities · P pause · M mute · R restart', cx, card.y + 478);
+  ctx.fillText('Clear all 5 stages — the Tea-Kettle Tyrant waits at the end!', cx, card.y + 500);
 }
 
 function drawComicPanel(ctx, i, cx, cy) {
@@ -749,10 +868,11 @@ function drawComicPanel(ctx, i, cx, cy) {
 
 function drawDraft(ctx, S) {
   dimBoard(ctx);
-  const cx = BOARD.x + BOARD.w / 2;
+  // Centered on the VIEWPORT with fit-measured titles: nothing clips an edge.
+  const cx = VIEW.w / 2;
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fdf6e3';
-  ctx.font = font(30, true);
+  ctx.font = fitFont(ctx, 'CHOOSE A RELIC — PICK 1 OF 3', VIEW.w - 96, 30, true);
   ctx.fillText('CHOOSE A RELIC — PICK 1 OF 3', cx, 128);
   ctx.fillStyle = '#f2c94c';
   ctx.font = font(15, false);
@@ -772,12 +892,30 @@ function drawDraft(ctx, S) {
     ctx.strokeStyle = COLORS.ink;
     ctx.lineWidth = 3;
     ctx.stroke();
+    // Gold inner frame.
+    ctx.strokeStyle = '#d4a017';
+    ctx.lineWidth = 1.5;
+    wobblyRect(ctx, x + 6, y0 + 6, cw - 12, ch - 12, 6, 1.1 + i);
+    ctx.stroke();
     // Colored header banner.
     ctx.fillStyle = r.color;
     ctx.fillRect(x + 4, y0 + 4, cw - 8, 52);
-    ctx.fillStyle = '#fdf6e3';
-    ctx.font = font(17, true);
+    ctx.fillStyle = (r.color === '#d4a017' || r.color === '#b98a3e') ? '#2b2620' : '#fdf6e3';
+    ctx.font = fitFont(ctx, r.name.toUpperCase(), cw - 24, 17, true);
     ctx.fillText(r.name.toUpperCase(), x + cw / 2, y0 + 36);
+    // Rarity diamonds: COMMON 1, RARE 2, EPIC 3.
+    rarityDiamonds(ctx, x + cw / 2, y0 + 72, r.rarity === 'EPIC' ? 3 : r.rarity === 'RARE' ? 2 : 1);
+    // Emblem with a gold double ring.
+    ctx.strokeStyle = '#d4a017';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x + cw / 2, y0 + 128, 52, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = COLORS.ink;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x + cw / 2, y0 + 128, 47, 0, Math.PI * 2);
+    ctx.stroke();
     drawRelicIcon(ctx, r.id, x + cw / 2, y0 + 128, 84);
     ctx.fillStyle = COLORS.navy;
     ctx.font = font(16, true);
@@ -785,12 +923,36 @@ function drawDraft(ctx, S) {
     ctx.fillStyle = COLORS.inkSoft;
     ctx.font = font(13, false);
     wrapText(ctx, r.desc, x + cw / 2, y0 + 226, cw - 36, 18);
+    // Stat pills: effect tag + rarity, centered under the description.
+    const tagFg = (r.color === '#d4a017' || r.color === '#b98a3e') ? '#2b2620' : '#fdf6e3';
+    ctx.font = font(13, true);
+    const w1 = ctx.measureText(r.tag).width + 18;
+    const w2 = ctx.measureText(r.rarity + ' RELIC').width + 18;
+    let px = x + cw / 2 - (w1 + w2 + 10) / 2;
+    px += pill(ctx, px, y0 + 288, r.tag, tagFg, r.color) + 10;
+    pill(ctx, px, y0 + 288, r.rarity + ' RELIC', '#f2c94c', '#2b2620');
     S.ui.buttons.push({ id: 'relic' + i, x, y: y0, w: cw, h: ch });
   }
   button(ctx, S, 'reroll', cx - 110, y0 + ch + 24, 220, 44, 'REROLL — 25 GOLD', { fontSize: 15 });
   ctx.fillStyle = 'rgba(253,246,227,0.8)';
   ctx.font = font(13, false);
   ctx.fillText('Gold: ' + S.gold + (S.gold < 25 ? '  (not enough to reroll)' : ''), cx, y0 + ch + 92);
+}
+
+// Small rarity-diamond row helper (drawn diamonds, never font glyphs).
+function rarityDiamonds(ctx, cx, y, n) {
+  for (let d = 0; d < n; d++) {
+    const dx = cx + (d - (n - 1) / 2) * 18;
+    ctx.save();
+    ctx.translate(dx, y);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#d4a017';
+    ctx.fillRect(-5, -5, 10, 10);
+    ctx.strokeStyle = '#2b2620';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(-5, -5, 10, 10);
+    ctx.restore();
+  }
 }
 
 function wrapText(ctx, text, cx, y, maxW, lh) {
@@ -812,7 +974,7 @@ function wrapText(ctx, text, cx, y, maxW, lh) {
 
 function drawVictory(ctx, S) {
   dimBoard(ctx);
-  const cx = BOARD.x + BOARD.w / 2;
+  const cx = VIEW.w / 2;
   const card = { x: cx - 360, y: 96, w: 720, h: 520 };
   ctx.fillStyle = COLORS.parchment;
   wobblyRect(ctx, card.x, card.y, card.w, card.h, 8, 6.6);
@@ -874,7 +1036,7 @@ function drawVictory(ctx, S) {
 
 function drawDefeat(ctx, S) {
   dimBoard(ctx);
-  const cx = BOARD.x + BOARD.w / 2;
+  const cx = VIEW.w / 2;
   const card = { x: cx - 330, y: 150, w: 660, h: 380 };
   ctx.fillStyle = COLORS.parchment;
   wobblyRect(ctx, card.x, card.y, card.w, card.h, 8, 3.3);

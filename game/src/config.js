@@ -42,23 +42,24 @@ export const ENEMY_TYPES = {
 };
 
 // Five stages; the fifth is the boss. queue lists enemy types in spawn order.
+// Dense by design: 8–12 fiends on the board at once, so the arena always reads busy.
 export const STAGES = [
-  { name: 'Stage 1 · First Stir', queue: ['gremlin', 'gremlin', 'scroll', 'gremlin', 'scroll'] },
-  { name: 'Stage 2 · Porcelain Parade', queue: ['gremlin', 'scroll', 'teacup', 'gremlin', 'wyvern', 'scroll'] },
-  { name: 'Stage 3 · Ink Flood', queue: ['wyvern', 'scroll', 'teacup', 'wyvern', 'gremlin', 'teacup', 'scroll'] },
-  { name: 'Stage 4 · Cracked Brigade', queue: ['teacup', 'wyvern', 'teacup', 'scroll', 'wyvern', 'gremlin', 'teacup'] },
-  { name: 'Stage 5 · THE TEA-KETTLE TYRANT', queue: ['tyrant', 'gremlin', 'gremlin'], boss: true },
+  { name: 'Stage 1 · First Stir', queue: ['gremlin', 'gremlin', 'scroll', 'gremlin', 'scroll', 'gremlin', 'scroll', 'gremlin'] },
+  { name: 'Stage 2 · Porcelain Parade', queue: ['gremlin', 'scroll', 'teacup', 'gremlin', 'wyvern', 'scroll', 'gremlin', 'teacup', 'scroll'] },
+  { name: 'Stage 3 · Ink Flood', queue: ['wyvern', 'scroll', 'teacup', 'wyvern', 'gremlin', 'teacup', 'scroll', 'gremlin', 'wyvern', 'teacup'] },
+  { name: 'Stage 4 · Cracked Brigade', queue: ['teacup', 'wyvern', 'teacup', 'scroll', 'wyvern', 'gremlin', 'teacup', 'wyvern', 'scroll', 'gremlin', 'teacup'] },
+  { name: 'Stage 5 · THE TEA-KETTLE TYRANT', queue: ['tyrant', 'gremlin', 'gremlin', 'scroll', 'wyvern', 'gremlin', 'teacup'], boss: true },
 ];
 
 export const RELICS = [
-  { id: 'ladle', name: 'Golden Ladle', color: '#d4a017', tag: '+25% gold', desc: 'Every coin shines brighter.' },
-  { id: 'bounce', name: 'Bouncy Ink', color: '#3f8f7a', tag: '+1 bounce dmg', desc: 'The puck bites harder on every ricochet.' },
-  { id: 'cauldron', name: 'Big Cauldron', color: '#a03a2c', tag: 'Capture +50%', desc: 'Cauldron dunks pay half again.' },
-  { id: 'stirrer', name: 'Lucky Stirrer', color: '#5b4a8a', tag: 'Combo lasts longer', desc: 'The combo clock ticks slower.' },
-  { id: 'shield', name: 'Porcelain Shield', color: '#7fa3b8', tag: 'Drain -50%', desc: 'Cauldron sips hurt half as much.' },
-  { id: 'twin', name: 'Twin Puck', color: '#c0392b', tag: 'Sling 2 pucks', desc: 'Every sling launches a spare puck.' },
-  { id: 'quill', name: 'Sharp Quill', color: '#2b2620', tag: '+30% puck damage', desc: 'A keener edge on every hit.' },
-  { id: 'honey', name: 'Sweet Honey', color: '#b98a3e', tag: 'Foes 20% slower', desc: 'The whole board moves like treacle.' },
+  { id: 'ladle', name: 'Golden Ladle', color: '#d4a017', tag: '+25% gold', desc: 'Every coin shines brighter.', rarity: 'COMMON' },
+  { id: 'bounce', name: 'Bouncy Ink', color: '#3f8f7a', tag: '+1 bounce dmg', desc: 'The puck bites harder on every ricochet.', rarity: 'COMMON' },
+  { id: 'cauldron', name: 'Big Cauldron', color: '#a03a2c', tag: 'Capture +50%', desc: 'Cauldron dunks pay half again.', rarity: 'RARE' },
+  { id: 'stirrer', name: 'Lucky Stirrer', color: '#5b4a8a', tag: 'Combo lasts longer', desc: 'The combo clock ticks slower.', rarity: 'COMMON' },
+  { id: 'shield', name: 'Porcelain Shield', color: '#7fa3b8', tag: 'Drain -50%', desc: 'Cauldron sips hurt half as much.', rarity: 'RARE' },
+  { id: 'twin', name: 'Twin Puck', color: '#c0392b', tag: 'Sling 2 pucks', desc: 'Every sling launches a spare puck.', rarity: 'EPIC' },
+  { id: 'quill', name: 'Sharp Quill', color: '#2b2620', tag: '+30% puck damage', desc: 'A keener edge on every hit.', rarity: 'RARE' },
+  { id: 'honey', name: 'Sweet Honey', color: '#b98a3e', tag: 'Foes 20% slower', desc: 'The whole board moves like treacle.', rarity: 'COMMON' },
 ];
 
 export const HOTBAR = [
